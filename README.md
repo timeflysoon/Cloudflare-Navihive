@@ -81,8 +81,8 @@
         - `AUTH_USERNAME`：管理员用户名
         - `AUTH_PASSWORD`：管理员密码
         - `AUTH_SECRET`：JWT 密钥（使用随机字符串）
-        # https://bcrypt-generator.com/  哈希值粘贴到   AUTH_PASSWORD
-        # https://bcrypt.online/    32位随机字符串   AUTH_SECRET
+        - https://bcrypt-generator.com/  哈希值粘贴到   AUTH_PASSWORD
+        - https://bcrypt.online/    32位随机字符串   AUTH_SECRET
 5. 点击"部署"按钮
 
 部署完成后，您将获得一个类似`https://your-project-name.username.workers.dev`的网址，这就是您的导航站地址。
