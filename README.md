@@ -22,7 +22,7 @@
 ![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-f38020)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zqq-nuli/Cloudflare-Navihive)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/timeflysoon/Cloudflare-Navihive)
 
 **一个优雅、现代化的网站导航管理系统**
 基于 Cloudflare Workers 构建 • 零成本部署 • 全球 CDN 加速 • 企业级安全
