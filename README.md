@@ -153,6 +153,28 @@
    - 如果SQL命令执行成功，您将看到"查询成功"的提示信息
    - 至此，数据库初始化完成，您可以访问您的导航站首页并使用配置的管理员账号登录
 
+   - 迁移指南
+   - 从 v1.0.x 升级到 v1.1.0 需要执行数据库迁移：
+   ```sql
+   -- 1. 备份数据
+   wrangler d1 export navigation-db --output=backup.sql
+
+   -- 2. 执行迁移
+   wrangler d1 execute navigation-db --file=migrations/002_add_is_public.sql
+
+   -- 3. 部署新版本
+   pnpm deploy
+   ```   
+   - 环境变量变更
+   - 新增环境变量（可选）：
+   ```sql
+   {
+     "vars": {
+       "AUTH_REQUIRED_FOR_READ": "false"  // 新增：启用访客模式
+     }
+   }
+   ```  
+
 ### 三、手动部署方法（适合开发者）
 
 如果您希望更细致地控制部署过程，可以按照以下步骤手动部署：
