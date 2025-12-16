@@ -135,7 +135,13 @@
    -- 设置初始化标志
    INSERT INTO configs (key, value) VALUES ('DB_INITIALIZED', 'true');
 
-   -- 创建只读模式所需索引
+   -- groups 表新增字段
+   ALTER TABLE groups ADD COLUMN is_public INTEGER DEFAULT 1;
+
+   -- sites 表新增字段
+   ALTER TABLE sites ADD COLUMN is_public INTEGER DEFAULT 1;
+
+   -- 性能优化索引
    CREATE INDEX IF NOT EXISTS idx_groups_is_public ON groups(is_public);
    CREATE INDEX IF NOT EXISTS idx_sites_is_public ON sites(is_public);
    ```
