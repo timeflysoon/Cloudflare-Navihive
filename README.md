@@ -50,7 +50,7 @@
 
 1. **Fork 项目** → 点击右上角 Fork 按钮
 2. **新建 wrangler.jsonc 文件** 从 wrangler.template.jsonc 复制然后修改
-3. **一键部署** → [![Deploy](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/你的用户名/Cloudflare-Navihive)
+3. **一键部署** → [![Deploy](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/timeflysoon/Cloudflare-Navihive)
 4. **配置数据库** → 按照[部署指南](https://zqq-nuli.github.io/Cloudflare-Navihive/deployment/)创建 D1 数据库
 
 > 详细步骤见[完整部署指南](https://zqq-nuli.github.io/Cloudflare-Navihive/deployment/)
