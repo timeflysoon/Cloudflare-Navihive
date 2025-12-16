@@ -134,6 +134,10 @@
 
    -- 设置初始化标志
    INSERT INTO configs (key, value) VALUES ('DB_INITIALIZED', 'true');
+
+   -- 创建只读模式所需索引
+   CREATE INDEX IF NOT EXISTS idx_groups_is_public ON groups(is_public);
+   CREATE INDEX IF NOT EXISTS idx_sites_is_public ON sites(is_public);
    ```
 
    - 点击"运行"按钮执行SQL命令：
