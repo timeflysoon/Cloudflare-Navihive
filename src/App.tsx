@@ -19,10 +19,7 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  DragOverlay,
   useDroppable,
-  DropAnimation,
-  defaultDropAnimation,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -104,7 +101,15 @@ const DEFAULT_CONFIGS = {
 };
 
 // 可折叠分组容器组件（用于包裹每个分组，使其可接收拖拽）
-const DroppableGroupContainer = ({ groupId, children, isOver }) => {
+const DroppableGroupContainer = ({ 
+  groupId, 
+  children, 
+  isOver 
+}: { 
+  groupId: number; 
+  children: React.ReactNode; 
+  isOver: boolean; 
+}) => {
   const { setNodeRef } = useDroppable({
     id: `group-drop-${groupId}`,
     data: { type: 'group', groupId },
@@ -161,6 +166,7 @@ function App() {
   const [currentSortingGroupId, setCurrentSortingGroupId] = useState<number | null>(null);
   
   // 新增：拖拽状态
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [activeDragGroupId, setActiveDragGroupId] = useState<number | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null);
 
@@ -588,7 +594,11 @@ function App() {
     if (!sourceGroup) return;
     
     const draggedSite = sourceGroup.sites.find(s => s.id === draggedSiteId);
-    if (!draggedSite) return;
+    // 添加更严格的检查
+    if (!draggedSite || draggedSite.id === undefined) {
+      console.error('未找到拖拽的站点或站点ID无效');
+      return;
+    }
 
     // 检查释放目标：是组内其他位置还是其他分组
     if (over.id.toString().startsWith('group-drop-')) {
@@ -605,7 +615,7 @@ function App() {
             if (group.id === sourceGroupId) {
               return {
                 ...group,
-                sites: group.sites.filter(s => s.id !== draggedSiteId)
+                sites: group.sites.filter(s => s.id !== draggedSite.id)
               };
             }
             // 添加到目标分组（放在末尾）
@@ -626,7 +636,7 @@ function App() {
 
         // 2. 调用API更新后端
         try {
-          await api.updateSite(draggedSiteId, {
+          await api.updateSite(draggedSite.id, {
             ...draggedSite,
             group_id: targetGroupId,
             order_num: groups.find(g => g.id === targetGroupId)?.sites.length || 0
@@ -670,7 +680,7 @@ function App() {
   };
 
   // 处理拖拽开始
-  const handleDragStart = (event: any) => {
+  const handleDragStart = () => {
     // 可以在这里添加一些拖拽开始时的逻辑
   };
 
