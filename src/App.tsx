@@ -595,11 +595,6 @@ function App() {
       if (!isNaN(targetGroupId)) {
         setDragOverGroupId(targetGroupId);
         setIsOverGroupHeader(true);
-        
-        // 如果悬停在其他分组的标题上，并且该分组不是当前排序的分组
-        if (targetGroupId !== currentSortingGroupId) {
-          // 这里可以添加一些视觉反馈，比如改变标题的背景色
-        }
       }
     } else if (overId.startsWith('group-')) {
       // 悬停在分组容器上（不是标题）
@@ -615,7 +610,7 @@ function App() {
     }
   };
 
-  // 处理拖拽结束事件
+  // 处理拖拽结束事件 - 修复跨组拖拽
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
@@ -663,9 +658,6 @@ function App() {
             await handleTransferSite(draggedSite.site.id!, targetGroupId);
           }
         }
-      } else if (overId.startsWith('site-')) {
-        // 同组内站点排序 - 由GroupCard组件处理
-        // 这里我们不需要做任何处理，因为GroupCard组件会处理同组内的排序
       }
     }
     
@@ -687,11 +679,15 @@ function App() {
         return;
       }
       
+      // 获取目标分组中的站点数量，确定新的order_num
+      const targetGroup = groups.find(g => g.id === targetGroupId);
+      const targetGroupSiteCount = targetGroup?.sites?.length || 0;
+      
       // 更新站点的分组ID
       const updatedSite = {
         ...site,
         group_id: targetGroupId,
-        order_num: 0, // 重置顺序，放到新分组的最前面
+        order_num: targetGroupSiteCount, // 放到新分组的最后面
       };
       
       // 调用API更新站点
@@ -908,7 +904,7 @@ function App() {
     }
   };
 
-  // 处理导入数据
+  // 处理导入数据 - 修改导入逻辑确保排序正确
   const handleImportData = async () => {
     if (!importFile) {
       handleError('请选择要导入的文件');
@@ -943,6 +939,42 @@ function App() {
             throw new Error('导入文件格式错误：缺少配置数据');
           }
 
+          // 修改导入数据，确保站点按正确的顺序排列
+          // 首先按分组和原始顺序排序
+          const sortedSites = [...importData.sites].sort((a, b) => {
+            // 先按分组ID排序
+            if (a.group_id !== b.group_id) {
+              return a.group_id - b.group_id;
+            }
+            // 再按原始order_num排序
+            return a.order_num - b.order_num;
+          });
+
+          // 重新分配order_num，确保同一分组内站点连续
+          const groupedSites: Record<number, Site[]> = {};
+          sortedSites.forEach(site => {
+            if (!groupedSites[site.group_id]) {
+              groupedSites[site.group_id] = [];
+            }
+            groupedSites[site.group_id].push(site);
+          });
+
+          // 为每个分组内的站点重新设置order_num，从0开始
+          let finalSites: Site[] = [];
+          Object.keys(groupedSites).forEach(groupId => {
+            const groupIdNum = parseInt(groupId);
+            const sitesInGroup = groupedSites[groupIdNum];
+            sitesInGroup.forEach((site, index) => {
+              finalSites.push({
+                ...site,
+                order_num: index
+              });
+            });
+          });
+
+          // 使用处理后的数据
+          importData.sites = finalSites;
+
           // 调用API导入数据
           const result = await api.importData(importData);
 
@@ -957,6 +989,7 @@ function App() {
               `导入成功！`,
               `分组：发现${stats.groups.total}个，新建${stats.groups.created}个，合并${stats.groups.merged}个`,
               `卡片：发现${stats.sites.total}个，新建${stats.sites.created}个，更新${stats.sites.updated}个，跳过${stats.sites.skipped}个`,
+              `注意：重复书签（相同分组和名称）已跳过，新书签已排在原有书签后面。`
             ].join('\n');
 
             setImportResultMessage(summary);
@@ -1456,13 +1489,20 @@ function App() {
                         key={`group-${group.id}`} 
                         id={`group-${group.id}`}
                         sx={{
-                          // 添加视觉反馈
-                          border: dragOverGroupId === group.id && isOverGroupHeader ? '2px solid #1976d2' : 'none',
+                          // 修复：添加显著的视觉反馈
+                          border: dragOverGroupId === group.id && isOverGroupHeader ? '3px dashed #1976d2' : 'none',
                           borderRadius: 1,
-                          transition: 'border 0.2s',
-                          backgroundColor: dragOverGroupId === group.id && isOverGroupHeader ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
-                          // 确保拖拽状态变量被使用，避免TypeScript错误
-                          // 使用一个空对象来引用变量，确保它们不被视为未使用
+                          transition: 'all 0.3s ease',
+                          backgroundColor: dragOverGroupId === group.id && isOverGroupHeader 
+                            ? (theme.palette.mode === 'dark' ? 'rgba(25, 118, 210, 0.2)' : 'rgba(25, 118, 210, 0.08)')
+                            : 'transparent',
+                          boxShadow: dragOverGroupId === group.id && isOverGroupHeader 
+                            ? '0 0 15px rgba(25, 118, 210, 0.3)' 
+                            : 'none',
+                          transform: dragOverGroupId === group.id && isOverGroupHeader 
+                            ? 'scale(1.01)' 
+                            : 'scale(1)',
+                          // 确保变量被使用，避免TypeScript错误
                           ...(dragOverGroupId || isOverGroupHeader ? {} : {})
                         }}
                       >
@@ -1479,6 +1519,9 @@ function App() {
                           onUpdateGroup={handleGroupUpdate}
                           onDeleteGroup={handleGroupDelete}
                           configs={configs}
+                          // 传递拖拽状态到GroupCard组件
+                          isDragOver={dragOverGroupId === group.id}
+                          isOverHeader={isOverGroupHeader}
                         />
                       </Box>
                     ))}
