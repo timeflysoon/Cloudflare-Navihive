@@ -956,23 +956,20 @@ function App() {
             if (!groupedSites[site.group_id]) {
               groupedSites[site.group_id] = [];
             }
-            groupedSites[site.group_id].push(site);
+            groupedSites[site.group_id]!.push(site);
           });
 
           // 为每个分组内的站点重新设置order_num，从0开始
           let finalSites: Site[] = [];
           Object.keys(groupedSites).forEach(groupId => {
             const groupIdNum = parseInt(groupId);
-            const sitesInGroup = groupedSites[groupIdNum];
-            // 修复：添加非空断言，因为我们知道这个键存在
-            if (sitesInGroup) {
-              sitesInGroup.forEach((site, index) => {
-                finalSites.push({
-                  ...site,
-                  order_num: index
-                });
+            const sitesInGroup = groupedSites[groupIdNum]!;
+            sitesInGroup.forEach((site, index) => {
+              finalSites.push({
+                ...site,
+                order_num: index
               });
-            }
+            });
           });
 
           // 使用处理后的数据
