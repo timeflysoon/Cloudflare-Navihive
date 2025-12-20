@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { NavigationClient } from './API/client';
 import { MockNavigationClient } from './API/mock';
 import { Site, Group } from './API/http';
@@ -195,6 +195,9 @@ function App() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importLoading, setImportLoading] = useState(false);
+
+  // 文件输入引用
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 错误提示框状态
   const [snackbarOpen, setSnackbarOpen] = useState(false);
@@ -713,12 +716,23 @@ function App() {
   const handleOpenImport = () => {
     setImportFile(null);
     setImportError(null);
+    // 关键修复：确保文件输入被重置
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     setOpenImport(true);
     handleMenuClose();
   };
 
   const handleCloseImport = () => {
     setOpenImport(false);
+    // 关键修复：关闭时完全清理状态
+    setImportFile(null);
+    setImportError(null);
+    // 关键修复：重置文件输入，确保下次打开时完全干净
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   // 处理文件选择
@@ -729,6 +743,8 @@ function App() {
         setImportFile(selectedFile);
         setImportError(null);
       }
+      // 关键修复：重置文件输入值，允许再次选择同一文件
+      e.target.value = '';
     }
   };
 
@@ -790,10 +806,17 @@ function App() {
           // 刷新数据
           await fetchData();
           await fetchConfigs();
+          
+          // 关键修复：清除文件状态
+          setImportFile(null);
+          setImportError(null);
+          
           handleCloseImport();
         } catch (error) {
           console.error('解析导入数据失败:', error);
           handleError('解析导入数据失败: ' + (error instanceof Error ? error.message : '未知错误'));
+          // 出错时也要清除文件状态
+          setImportFile(null);
         } finally {
           setImportLoading(false);
         }
@@ -802,11 +825,14 @@ function App() {
       fileReader.onerror = () => {
         handleError('读取文件失败');
         setImportLoading(false);
+        // 出错时也要清除文件状态
+        setImportFile(null);
       };
     } catch (error) {
       console.error('导入数据失败:', error);
       handleError('导入数据失败: ' + (error instanceof Error ? error.message : '未知错误'));
-    } finally {
+      // 出错时也要清除文件状态
+      setImportFile(null);
       setImportLoading(false);
     }
   };
@@ -1744,7 +1770,13 @@ function App() {
                   sx={{ mb: 2 }}
                 >
                   选择文件
-                  <input type='file' hidden accept='.json' onChange={handleFileSelect} />
+                  <input 
+                    type='file' 
+                    hidden 
+                    accept='.json' 
+                    onChange={handleFileSelect} 
+                    ref={fileInputRef} 
+                  />
                 </Button>
                 {importFile && (
                   <Typography variant='body2' sx={{ mt: 1 }}>
