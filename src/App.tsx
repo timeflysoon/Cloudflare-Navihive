@@ -19,6 +19,8 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -70,6 +72,7 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import LinkIcon from '@mui/icons-material/Link';
 
 // 根据环境选择使用真实API还是模拟API
 const isDevEnvironment = import.meta.env.DEV;
@@ -97,6 +100,17 @@ const DEFAULT_CONFIGS = {
   'site.iconApi': 'https://www.faviconextractor.com/favicon/{domain}?larger=true', // 默认使用的API接口，带上 ?larger=true 参数可以获取最大尺寸的图标
   'site.searchBoxEnabled': 'true', // 是否启用搜索框
   'site.searchBoxGuestEnabled': 'true', // 访客是否可以使用搜索框
+};
+
+// 辅助函数：扁平化所有站点
+const flattenAllSites = (groups: GroupWithSites[]) => {
+  return groups.flatMap(group => 
+    group.sites.map(site => ({
+      ...site,
+      group_id: group.id,
+      group_name: group.name
+    }))
+  );
 };
 
 function App() {
@@ -205,6 +219,10 @@ function App() {
   // 导入结果提示框状态
   const [importResultOpen, setImportResultOpen] = useState(false);
   const [importResultMessage, setImportResultMessage] = useState('');
+
+  // 拖拽相关状态
+  const [activeDragSite, setActiveDragSite] = useState<Site & { group_id: number; group_name: string } | null>(null);
+  const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null);
 
   // 菜单打开关闭
   const handleMenuOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -483,33 +501,38 @@ function App() {
     }
   };
 
-  // 保存站点排序
-  const handleSaveSiteOrder = async (groupId: number, sites: Site[]) => {
+  // 保存站点排序和分组更改
+  const handleSaveSiteOrder = async () => {
     try {
-      console.log('保存站点排序', groupId, sites);
+      console.log('保存站点排序和分组更改', groups);
 
-      // 构造需要更新的站点顺序数据
-      const siteOrders = sites.map((site, index) => ({
-        id: site.id as number,
-        order_num: index,
-      }));
+      // 收集所有需要更新的站点
+      const siteUpdates = groups.flatMap(group =>
+        group.sites.map((site, index) => ({
+          id: site.id as number,
+          group_id: group.id as number,
+          order_num: index,
+        }))
+      );
 
-      // 调用API更新站点顺序
-      const result = await api.updateSiteOrder(siteOrders);
+      // 调用API批量更新站点
+      const result = await api.updateSiteOrder(siteUpdates);
 
       if (result) {
-        console.log('站点排序更新成功');
+        console.log('站点排序和分组更新成功');
         // 重新获取最新数据
         await fetchData();
       } else {
-        throw new Error('站点排序更新失败');
+        throw new Error('站点排序和分组更新失败');
       }
 
       setSortMode(SortMode.None);
       setCurrentSortingGroupId(null);
+      setActiveDragSite(null);
+      setDragOverGroupId(null);
     } catch (error) {
-      console.error('更新站点排序失败:', error);
-      handleError('更新站点排序失败: ' + (error as Error).message);
+      console.error('更新站点排序和分组失败:', error);
+      handleError('更新站点排序和分组失败: ' + (error as Error).message);
     }
   };
 
@@ -531,21 +554,196 @@ function App() {
   const cancelSort = () => {
     setSortMode(SortMode.None);
     setCurrentSortingGroupId(null);
+    setActiveDragSite(null);
+    setDragOverGroupId(null);
+  };
+
+  // 处理拖拽开始事件
+  const handleDragStart = (event: DragStartEvent) => {
+    if (sortMode !== SortMode.SiteSort) return;
+
+    const { active } = event;
+    const activeId = active.id as string;
+    
+    // 从所有站点中查找被拖拽的站点
+    const allSites = flattenAllSites(groups);
+    const draggedSite = allSites.find(site => site.id?.toString() === activeId);
+    
+    if (draggedSite) {
+      setActiveDragSite(draggedSite);
+    }
   };
 
   // 处理拖拽结束事件
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
+    if (sortMode !== SortMode.SiteSort) {
+      // 如果是分组排序模式，处理分组排序
+      const { active, over } = event;
+
+      if (!over) return;
+
+      if (active.id !== over.id) {
+        const oldIndex = groups.findIndex((group) => group.id.toString() === active.id);
+        const newIndex = groups.findIndex((group) => group.id.toString() === over.id);
+
+        if (oldIndex !== -1 && newIndex !== -1) {
+          setGroups(arrayMove(groups, oldIndex, newIndex));
+        }
+      }
+      return;
+    }
+
+    // 站点排序模式：处理跨组拖拽
     const { active, over } = event;
 
-    if (!over) return;
+    if (!over) {
+      setActiveDragSite(null);
+      setDragOverGroupId(null);
+      return;
+    }
 
-    if (active.id !== over.id) {
-      const oldIndex = groups.findIndex((group) => group.id.toString() === active.id);
-      const newIndex = groups.findIndex((group) => group.id.toString() === over.id);
+    const activeId = active.id as string;
+    const overId = over.id as string;
 
-      if (oldIndex !== -1 && newIndex !== -1) {
-        setGroups(arrayMove(groups, oldIndex, newIndex));
+    // 查找被拖拽的站点
+    const allSites = flattenAllSites(groups);
+    const draggedSite = allSites.find(site => site.id?.toString() === activeId);
+    
+    if (!draggedSite) {
+      setActiveDragSite(null);
+      setDragOverGroupId(null);
+      return;
+    }
+
+    // 检查是否是拖拽到分组
+    if (overId.startsWith('group-')) {
+      const targetGroupId = parseInt(overId.replace('group-', ''));
+      
+      if (!isNaN(targetGroupId) && draggedSite.group_id !== targetGroupId) {
+        // 移动到新分组
+        setGroups(prevGroups => {
+          const newGroups = [...prevGroups];
+          
+          // 从原分组移除站点
+          const sourceGroupIndex = newGroups.findIndex(g => g.id === draggedSite.group_id);
+          if (sourceGroupIndex !== -1) {
+            newGroups[sourceGroupIndex] = {
+              ...newGroups[sourceGroupIndex],
+              sites: newGroups[sourceGroupIndex].sites.filter(s => s.id !== draggedSite.id)
+            };
+          }
+          
+          // 添加到目标分组
+          const targetGroupIndex = newGroups.findIndex(g => g.id === targetGroupId);
+          if (targetGroupIndex !== -1) {
+            const updatedSite = {
+              ...draggedSite,
+              group_id: targetGroupId
+            };
+            
+            newGroups[targetGroupIndex] = {
+              ...newGroups[targetGroupIndex],
+              sites: [...newGroups[targetGroupIndex].sites, updatedSite]
+            };
+          }
+          
+          return newGroups;
+        });
       }
+    } else if (overId.startsWith('site-')) {
+      // 站点之间的拖拽（同组内排序）
+      const targetSiteId = parseInt(overId.replace('site-', ''));
+      
+      // 查找目标站点
+      const targetSite = allSites.find(site => site.id === targetSiteId);
+      
+      if (targetSite && draggedSite.group_id === targetSite.group_id) {
+        // 同组内排序
+        const groupId = draggedSite.group_id;
+        const groupIndex = groups.findIndex(g => g.id === groupId);
+        
+        if (groupIndex !== -1) {
+          const group = groups[groupIndex];
+          const siteIndex = group.sites.findIndex(s => s.id === draggedSite.id);
+          const overIndex = group.sites.findIndex(s => s.id === targetSiteId);
+          
+          if (siteIndex !== -1 && overIndex !== -1) {
+            setGroups(prevGroups => {
+              const newGroups = [...prevGroups];
+              const newSites = arrayMove(newGroups[groupIndex].sites, siteIndex, overIndex);
+              
+              newGroups[groupIndex] = {
+                ...newGroups[groupIndex],
+                sites: newSites
+              };
+              
+              return newGroups;
+            });
+          }
+        }
+      } else if (targetSite && draggedSite.group_id !== targetSite.group_id) {
+        // 跨组拖拽到具体站点位置
+        const sourceGroupId = draggedSite.group_id;
+        const targetGroupId = targetSite.group_id;
+        
+        setGroups(prevGroups => {
+          const newGroups = [...prevGroups];
+          
+          // 从原分组移除站点
+          const sourceGroupIndex = newGroups.findIndex(g => g.id === sourceGroupId);
+          if (sourceGroupIndex !== -1) {
+            newGroups[sourceGroupIndex] = {
+              ...newGroups[sourceGroupIndex],
+              sites: newGroups[sourceGroupIndex].sites.filter(s => s.id !== draggedSite.id)
+            };
+          }
+          
+          // 添加到目标分组的指定位置
+          const targetGroupIndex = newGroups.findIndex(g => g.id === targetGroupId);
+          if (targetGroupIndex !== -1) {
+            const targetSiteIndex = newGroups[targetGroupIndex].sites.findIndex(s => s.id === targetSiteId);
+            const updatedSite = {
+              ...draggedSite,
+              group_id: targetGroupId
+            };
+            
+            if (targetSiteIndex !== -1) {
+              const newSites = [...newGroups[targetGroupIndex].sites];
+              newSites.splice(targetSiteIndex, 0, updatedSite);
+              
+              newGroups[targetGroupIndex] = {
+                ...newGroups[targetGroupIndex],
+                sites: newSites
+              };
+            } else {
+              newGroups[targetGroupIndex] = {
+                ...newGroups[targetGroupIndex],
+                sites: [...newGroups[targetGroupIndex].sites, updatedSite]
+              };
+            }
+          }
+          
+          return newGroups;
+        });
+      }
+    }
+
+    setActiveDragSite(null);
+    setDragOverGroupId(null);
+  };
+
+  // 处理拖拽悬停事件
+  const handleDragOver = (event: any) => {
+    if (sortMode !== SortMode.SiteSort) return;
+    
+    const { over } = event;
+    if (over && over.id.toString().startsWith('group-')) {
+      const groupId = parseInt(over.id.toString().replace('group-', ''));
+      if (!isNaN(groupId) && groupId !== dragOverGroupId) {
+        setDragOverGroupId(groupId);
+      }
+    } else {
+      setDragOverGroupId(null);
     }
   };
 
@@ -1041,6 +1239,21 @@ function App() {
             >
               {sortMode !== SortMode.None ? (
                 <>
+                  {sortMode === SortMode.SiteSort && (
+                    <Button
+                      variant='contained'
+                      color='primary'
+                      startIcon={<LinkIcon />}
+                      onClick={handleSaveSiteOrder}
+                      size='small'
+                      sx={{
+                        minWidth: 'auto',
+                        fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                      }}
+                    >
+                      保存站点顺序
+                    </Button>
+                  )}
                   {sortMode === SortMode.GroupSort && (
                     <Button
                       variant='contained'
@@ -1230,18 +1443,48 @@ function App() {
           )}
 
           {!loading && !error && (
-            <Box
-              sx={{
-                '& > *': { mb: 5 },
-                minHeight: '100px',
-              }}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragOver={handleDragOver}
             >
-              {sortMode === SortMode.GroupSort ? (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
+              {/* 拖拽覆盖层 */}
+              {activeDragSite && (
+                <DragOverlay>
+                  <Box
+                    sx={{
+                      p: 2,
+                      bgcolor: 'background.paper',
+                      borderRadius: 1,
+                      boxShadow: 3,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      maxWidth: 200,
+                    }}
+                  >
+                    <Box
+                      component="img"
+                      src={activeDragSite.icon || `https://www.google.com/s2/favicons?domain=${activeDragSite.url}&sz=32`}
+                      alt={activeDragSite.name}
+                      sx={{ width: 24, height: 24, borderRadius: '50%' }}
+                    />
+                    <Typography variant="body2" noWrap>
+                      {activeDragSite.name}
+                    </Typography>
+                  </Box>
+                </DragOverlay>
+              )}
+              
+              <Box
+                sx={{
+                  '& > *': { mb: 5 },
+                  minHeight: '100px',
+                }}
+              >
+                {sortMode === SortMode.GroupSort ? (
                   <SortableContext
                     items={groups.map((group) => group.id.toString())}
                     strategy={verticalListSortingStrategy}
@@ -1259,30 +1502,39 @@ function App() {
                       ))}
                     </Stack>
                   </SortableContext>
-                </DndContext>
-              ) : (
-                <Stack spacing={5}>
-                  {groups.map((group) => (
-                    <Box key={`group-${group.id}`} id={`group-${group.id}`}>
-                      <GroupCard
-                        group={group}
-                        sortMode={sortMode === SortMode.None ? 'None' : 'SiteSort'}
-                        currentSortingGroupId={currentSortingGroupId}
-                        viewMode={viewMode}
-                        onUpdate={handleSiteUpdate}
-                        onDelete={handleSiteDelete}
-                        onSaveSiteOrder={handleSaveSiteOrder}
-                        onStartSiteSort={startSiteSort}
-                        onAddSite={handleOpenAddSite}
-                        onUpdateGroup={handleGroupUpdate}
-                        onDeleteGroup={handleGroupDelete}
-                        configs={configs}
-                      />
-                    </Box>
-                  ))}
-                </Stack>
-              )}
-            </Box>
+                ) : (
+                  <Stack spacing={5}>
+                    {groups.map((group) => (
+                      <Box 
+                        key={`group-${group.id}`} 
+                        id={`group-${group.id}`}
+                        sx={{
+                          border: dragOverGroupId === group.id ? '2px dashed #1976d2' : 'none',
+                          borderRadius: 1,
+                          transition: 'border 0.2s',
+                        }}
+                      >
+                        <GroupCard
+                          group={group}
+                          sortMode={sortMode === SortMode.None ? 'None' : 'SiteSort'}
+                          currentSortingGroupId={currentSortingGroupId}
+                          viewMode={viewMode}
+                          onUpdate={handleSiteUpdate}
+                          onDelete={handleSiteDelete}
+                          onStartSiteSort={startSiteSort}
+                          onAddSite={handleOpenAddSite}
+                          onUpdateGroup={handleGroupUpdate}
+                          onDeleteGroup={handleGroupDelete}
+                          configs={configs}
+                          isDragging={sortMode === SortMode.SiteSort}
+                          dragOverGroupId={dragOverGroupId}
+                        />
+                      </Box>
+                    ))}
+                  </Stack>
+                )}
+              </Box>
+            </DndContext>
           )}
 
           {/* 新增分组对话框 */}
@@ -1516,7 +1768,7 @@ function App() {
                         {newSite.is_public !== 0
                           ? '所有访客都可以看到此站点'
                           : '只有管理员登录后才能看到此站点'}
-                      </Typography>
+                    </Typography>
                     </Box>
                   }
                 />
