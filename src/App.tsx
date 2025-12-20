@@ -904,7 +904,7 @@ function App() {
     }
   };
 
-  // 处理导入数据 - 修改导入逻辑确保排序正确
+  // 处理导入数据 - 修复类型错误
   const handleImportData = async () => {
     if (!importFile) {
       handleError('请选择要导入的文件');
@@ -964,7 +964,7 @@ function App() {
           Object.keys(groupedSites).forEach(groupId => {
             const groupIdNum = parseInt(groupId);
             const sitesInGroup = groupedSites[groupIdNum];
-            // 修复：检查sitesInGroup是否存在
+            // 修复：添加非空断言，因为我们知道这个键存在
             if (sitesInGroup) {
               sitesInGroup.forEach((site, index) => {
                 finalSites.push({
@@ -1520,7 +1520,6 @@ function App() {
                           onUpdateGroup={handleGroupUpdate}
                           onDeleteGroup={handleGroupDelete}
                           configs={configs}
-                          // 不再传递 isDragOver 和 isOverHeader 属性
                         />
                       </Box>
                     ))}
