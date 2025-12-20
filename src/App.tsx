@@ -99,14 +99,6 @@ const DEFAULT_CONFIGS = {
   'site.searchBoxGuestEnabled': 'true', // 访客是否可以使用搜索框
 };
 
-// 创建一个简单的跨组拖拽类型
-interface DragTransferData {
-  type: 'site';
-  siteId: number;
-  sourceGroupId: number;
-  siteData: Site;
-}
-
 function App() {
   // 主题模式状态
   const [darkMode, setDarkMode] = useState(() => {
@@ -1383,7 +1375,6 @@ function App() {
                           onUpdateGroup={handleGroupUpdate}
                           onDeleteGroup={handleGroupDelete}
                           configs={configs}
-                          dragOverGroupId={dragOverGroupId}
                         />
                       </Box>
                     ))}
