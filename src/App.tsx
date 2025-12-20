@@ -105,10 +105,10 @@ const DEFAULT_CONFIGS = {
 // 辅助函数：扁平化所有站点
 const flattenAllSites = (groups: GroupWithSites[]) => {
   return groups.flatMap(group => 
-    group.sites.map(site => ({
+    (group.sites || []).map(site => ({
       ...site,
-      group_id: group.id,
-      group_name: group.name
+      group_id: group.id as number,
+      group_name: group.name || ''
     }))
   );
 };
@@ -221,7 +221,7 @@ function App() {
   const [importResultMessage, setImportResultMessage] = useState('');
 
   // 拖拽相关状态
-  const [activeDragSite, setActiveDragSite] = useState<Site & { group_id: number; group_name: string } | null>(null);
+  const [activeDragSite, setActiveDragSite] = useState<(Site & { group_id: number; group_name: string }) | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null);
 
   // 菜单打开关闭
@@ -501,38 +501,33 @@ function App() {
     }
   };
 
-  // 保存站点排序和分组更改
-  const handleSaveSiteOrder = async () => {
+  // 保存站点排序
+  const handleSaveSiteOrder = async (groupId: number, sites: Site[]) => {
     try {
-      console.log('保存站点排序和分组更改', groups);
+      console.log('保存站点排序', groupId, sites);
 
-      // 收集所有需要更新的站点
-      const siteUpdates = groups.flatMap(group =>
-        group.sites.map((site, index) => ({
-          id: site.id as number,
-          group_id: group.id as number,
-          order_num: index,
-        }))
-      );
+      // 构造需要更新的站点顺序数据
+      const siteOrders = sites.map((site, index) => ({
+        id: site.id as number,
+        order_num: index,
+      }));
 
-      // 调用API批量更新站点
-      const result = await api.updateSiteOrder(siteUpdates);
+      // 调用API更新站点顺序
+      const result = await api.updateSiteOrder(siteOrders);
 
       if (result) {
-        console.log('站点排序和分组更新成功');
+        console.log('站点排序更新成功');
         // 重新获取最新数据
         await fetchData();
       } else {
-        throw new Error('站点排序和分组更新失败');
+        throw new Error('站点排序更新失败');
       }
 
       setSortMode(SortMode.None);
       setCurrentSortingGroupId(null);
-      setActiveDragSite(null);
-      setDragOverGroupId(null);
     } catch (error) {
-      console.error('更新站点排序和分组失败:', error);
-      handleError('更新站点排序和分组失败: ' + (error as Error).message);
+      console.error('更新站点排序失败:', error);
+      handleError('更新站点排序失败: ' + (error as Error).message);
     }
   };
 
@@ -583,8 +578,8 @@ function App() {
       if (!over) return;
 
       if (active.id !== over.id) {
-        const oldIndex = groups.findIndex((group) => group.id.toString() === active.id);
-        const newIndex = groups.findIndex((group) => group.id.toString() === over.id);
+        const oldIndex = groups.findIndex((group) => group.id?.toString() === active.id);
+        const newIndex = groups.findIndex((group) => group.id?.toString() === over.id);
 
         if (oldIndex !== -1 && newIndex !== -1) {
           setGroups(arrayMove(groups, oldIndex, newIndex));
@@ -629,7 +624,7 @@ function App() {
           if (sourceGroupIndex !== -1) {
             newGroups[sourceGroupIndex] = {
               ...newGroups[sourceGroupIndex],
-              sites: newGroups[sourceGroupIndex].sites.filter(s => s.id !== draggedSite.id)
+              sites: (newGroups[sourceGroupIndex].sites || []).filter(s => s.id !== draggedSite.id)
             };
           }
           
@@ -641,9 +636,12 @@ function App() {
               group_id: targetGroupId
             };
             
+            // 移除group_id和group_name属性，因为它们不是Site类型的属性
+            const { group_id, group_name, ...siteWithoutExtraProps } = updatedSite;
+            
             newGroups[targetGroupIndex] = {
               ...newGroups[targetGroupIndex],
-              sites: [...newGroups[targetGroupIndex].sites, updatedSite]
+              sites: [...(newGroups[targetGroupIndex].sites || []), siteWithoutExtraProps]
             };
           }
           
@@ -664,13 +662,14 @@ function App() {
         
         if (groupIndex !== -1) {
           const group = groups[groupIndex];
-          const siteIndex = group.sites.findIndex(s => s.id === draggedSite.id);
-          const overIndex = group.sites.findIndex(s => s.id === targetSiteId);
+          const siteIndex = (group.sites || []).findIndex(s => s.id === draggedSite.id);
+          const overIndex = (group.sites || []).findIndex(s => s.id === targetSiteId);
           
           if (siteIndex !== -1 && overIndex !== -1) {
             setGroups(prevGroups => {
               const newGroups = [...prevGroups];
-              const newSites = arrayMove(newGroups[groupIndex].sites, siteIndex, overIndex);
+              const currentSites = newGroups[groupIndex].sites || [];
+              const newSites = arrayMove(currentSites, siteIndex, overIndex);
               
               newGroups[groupIndex] = {
                 ...newGroups[groupIndex],
@@ -694,22 +693,25 @@ function App() {
           if (sourceGroupIndex !== -1) {
             newGroups[sourceGroupIndex] = {
               ...newGroups[sourceGroupIndex],
-              sites: newGroups[sourceGroupIndex].sites.filter(s => s.id !== draggedSite.id)
+              sites: (newGroups[sourceGroupIndex].sites || []).filter(s => s.id !== draggedSite.id)
             };
           }
           
           // 添加到目标分组的指定位置
           const targetGroupIndex = newGroups.findIndex(g => g.id === targetGroupId);
           if (targetGroupIndex !== -1) {
-            const targetSiteIndex = newGroups[targetGroupIndex].sites.findIndex(s => s.id === targetSiteId);
+            const targetSiteIndex = (newGroups[targetGroupIndex].sites || []).findIndex(s => s.id === targetSiteId);
             const updatedSite = {
               ...draggedSite,
               group_id: targetGroupId
             };
             
+            // 移除group_id和group_name属性
+            const { group_id, group_name, ...siteWithoutExtraProps } = updatedSite;
+            
             if (targetSiteIndex !== -1) {
-              const newSites = [...newGroups[targetGroupIndex].sites];
-              newSites.splice(targetSiteIndex, 0, updatedSite);
+              const newSites = [...(newGroups[targetGroupIndex].sites || [])];
+              newSites.splice(targetSiteIndex, 0, siteWithoutExtraProps);
               
               newGroups[targetGroupIndex] = {
                 ...newGroups[targetGroupIndex],
@@ -718,7 +720,7 @@ function App() {
             } else {
               newGroups[targetGroupIndex] = {
                 ...newGroups[targetGroupIndex],
-                sites: [...newGroups[targetGroupIndex].sites, updatedSite]
+                sites: [...(newGroups[targetGroupIndex].sites || []), siteWithoutExtraProps]
               };
             }
           }
@@ -784,8 +786,8 @@ function App() {
   // 新增站点相关函数
   const handleOpenAddSite = (groupId: number) => {
     const group = groups.find((g) => g.id === groupId);
-    const maxOrderNum = group?.sites.length
-      ? Math.max(...group.sites.map((s) => s.order_num)) + 1
+    const maxOrderNum = group?.sites?.length
+      ? Math.max(...(group.sites.map((s) => s.order_num))) + 1
       : 0;
 
     setNewSite({
@@ -1243,15 +1245,15 @@ function App() {
                     <Button
                       variant='contained'
                       color='primary'
-                      startIcon={<LinkIcon />}
-                      onClick={handleSaveSiteOrder}
+                      startIcon={<SaveIcon />}
+                      onClick={cancelSort}
                       size='small'
                       sx={{
                         minWidth: 'auto',
                         fontSize: { xs: '0.75rem', sm: '0.875rem' },
                       }}
                     >
-                      保存站点顺序
+                      完成排序
                     </Button>
                   )}
                   {sortMode === SortMode.GroupSort && (
@@ -1486,7 +1488,7 @@ function App() {
               >
                 {sortMode === SortMode.GroupSort ? (
                   <SortableContext
-                    items={groups.map((group) => group.id.toString())}
+                    items={groups.map((group) => group.id?.toString() || '')}
                     strategy={verticalListSortingStrategy}
                   >
                     <Stack
@@ -1498,7 +1500,7 @@ function App() {
                       }}
                     >
                       {groups.map((group) => (
-                        <SortableGroupItem key={group.id} id={group.id.toString()} group={group} />
+                        <SortableGroupItem key={group.id} id={group.id?.toString() || ''} group={group} />
                       ))}
                     </Stack>
                   </SortableContext>
@@ -1512,6 +1514,7 @@ function App() {
                           border: dragOverGroupId === group.id ? '2px dashed #1976d2' : 'none',
                           borderRadius: 1,
                           transition: 'border 0.2s',
+                          p: dragOverGroupId === group.id ? 1 : 0,
                         }}
                       >
                         <GroupCard
@@ -1521,13 +1524,12 @@ function App() {
                           viewMode={viewMode}
                           onUpdate={handleSiteUpdate}
                           onDelete={handleSiteDelete}
+                          onSaveSiteOrder={handleSaveSiteOrder}
                           onStartSiteSort={startSiteSort}
                           onAddSite={handleOpenAddSite}
                           onUpdateGroup={handleGroupUpdate}
                           onDeleteGroup={handleGroupDelete}
                           configs={configs}
-                          isDragging={sortMode === SortMode.SiteSort}
-                          dragOverGroupId={dragOverGroupId}
                         />
                       </Box>
                     ))}
@@ -1768,7 +1770,7 @@ function App() {
                         {newSite.is_public !== 0
                           ? '所有访客都可以看到此站点'
                           : '只有管理员登录后才能看到此站点'}
-                    </Typography>
+                      </Typography>
                     </Box>
                   }
                 />
