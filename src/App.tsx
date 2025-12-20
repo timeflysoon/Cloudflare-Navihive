@@ -19,8 +19,6 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  DragStartEvent,
-  DragOverlay,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -72,7 +70,6 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
-import LinkIcon from '@mui/icons-material/Link';
 
 // 根据环境选择使用真实API还是模拟API
 const isDevEnvironment = import.meta.env.DEV;
@@ -102,16 +99,13 @@ const DEFAULT_CONFIGS = {
   'site.searchBoxGuestEnabled': 'true', // 访客是否可以使用搜索框
 };
 
-// 辅助函数：扁平化所有站点
-const flattenAllSites = (groups: GroupWithSites[]) => {
-  return groups.flatMap(group => 
-    (group.sites || []).map(site => ({
-      ...site,
-      group_id: group.id as number,
-      group_name: group.name || ''
-    }))
-  );
-};
+// 创建一个简单的跨组拖拽类型
+interface DragTransferData {
+  type: 'site';
+  siteId: number;
+  sourceGroupId: number;
+  siteData: Site;
+}
 
 function App() {
   // 主题模式状态
@@ -220,8 +214,7 @@ function App() {
   const [importResultOpen, setImportResultOpen] = useState(false);
   const [importResultMessage, setImportResultMessage] = useState('');
 
-  // 拖拽相关状态
-  const [activeDragSite, setActiveDragSite] = useState<(Site & { group_id: number; group_name: string }) | null>(null);
+  // 跨组拖拽状态
   const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null);
 
   // 菜单打开关闭
@@ -549,189 +542,93 @@ function App() {
   const cancelSort = () => {
     setSortMode(SortMode.None);
     setCurrentSortingGroupId(null);
-    setActiveDragSite(null);
     setDragOverGroupId(null);
   };
 
-  // 处理拖拽开始事件
-  const handleDragStart = (event: DragStartEvent) => {
-    if (sortMode !== SortMode.SiteSort) return;
-
-    const { active } = event;
-    const activeId = active.id as string;
-    
-    // 从所有站点中查找被拖拽的站点
-    const allSites = flattenAllSites(groups);
-    const draggedSite = allSites.find(site => site.id?.toString() === activeId);
-    
-    if (draggedSite) {
-      setActiveDragSite(draggedSite);
-    }
-  };
-
   // 处理拖拽结束事件
-  const handleDragEnd = async (event: DragEndEvent) => {
-    if (sortMode !== SortMode.SiteSort) {
-      // 如果是分组排序模式，处理分组排序
-      const { active, over } = event;
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
 
-      if (!over) return;
+    if (!over) {
+      setDragOverGroupId(null);
+      return;
+    }
 
+    // 如果当前是分组排序模式
+    if (sortMode === SortMode.GroupSort) {
       if (active.id !== over.id) {
-        const oldIndex = groups.findIndex((group) => group.id?.toString() === active.id);
-        const newIndex = groups.findIndex((group) => group.id?.toString() === over.id);
+        const oldIndex = groups.findIndex((group) => group.id.toString() === active.id);
+        const newIndex = groups.findIndex((group) => group.id.toString() === over.id);
 
         if (oldIndex !== -1 && newIndex !== -1) {
           setGroups(arrayMove(groups, oldIndex, newIndex));
         }
       }
-      return;
-    }
-
-    // 站点排序模式：处理跨组拖拽
-    const { active, over } = event;
-
-    if (!over) {
-      setActiveDragSite(null);
       setDragOverGroupId(null);
       return;
     }
 
-    const activeId = active.id as string;
-    const overId = over.id as string;
-
-    // 查找被拖拽的站点
-    const allSites = flattenAllSites(groups);
-    const draggedSite = allSites.find(site => site.id?.toString() === activeId);
-    
-    if (!draggedSite) {
-      setActiveDragSite(null);
-      setDragOverGroupId(null);
-      return;
-    }
-
-    // 检查是否是拖拽到分组
-    if (overId.startsWith('group-')) {
-      const targetGroupId = parseInt(overId.replace('group-', ''));
+    // 如果是站点排序模式
+    if (sortMode === SortMode.SiteSort && currentSortingGroupId) {
+      const activeId = active.id as string;
+      const overId = over.id as string;
       
-      if (!isNaN(targetGroupId) && draggedSite.group_id !== targetGroupId) {
-        // 移动到新分组
-        setGroups(prevGroups => {
-          const newGroups = [...prevGroups];
-          
-          // 从原分组移除站点
-          const sourceGroupIndex = newGroups.findIndex(g => g.id === draggedSite.group_id);
-          if (sourceGroupIndex !== -1) {
-            newGroups[sourceGroupIndex] = {
-              ...newGroups[sourceGroupIndex],
-              sites: (newGroups[sourceGroupIndex].sites || []).filter(s => s.id !== draggedSite.id)
-            };
-          }
-          
-          // 添加到目标分组
-          const targetGroupIndex = newGroups.findIndex(g => g.id === targetGroupId);
-          if (targetGroupIndex !== -1) {
-            const updatedSite = {
-              ...draggedSite,
-              group_id: targetGroupId
-            };
-            
-            // 移除group_id和group_name属性，因为它们不是Site类型的属性
-            const { group_id, group_name, ...siteWithoutExtraProps } = updatedSite;
-            
-            newGroups[targetGroupIndex] = {
-              ...newGroups[targetGroupIndex],
-              sites: [...(newGroups[targetGroupIndex].sites || []), siteWithoutExtraProps]
-            };
-          }
-          
-          return newGroups;
-        });
-      }
-    } else if (overId.startsWith('site-')) {
-      // 站点之间的拖拽（同组内排序）
-      const targetSiteId = parseInt(overId.replace('site-', ''));
-      
-      // 查找目标站点
-      const targetSite = allSites.find(site => site.id === targetSiteId);
-      
-      if (targetSite && draggedSite.group_id === targetSite.group_id) {
-        // 同组内排序
-        const groupId = draggedSite.group_id;
-        const groupIndex = groups.findIndex(g => g.id === groupId);
+      // 检查是否拖拽到分组标题（跨组拖拽）
+      if (overId.startsWith('group-')) {
+        const targetGroupId = parseInt(overId.replace('group-', ''));
         
-        if (groupIndex !== -1) {
-          const group = groups[groupIndex];
-          const siteIndex = (group.sites || []).findIndex(s => s.id === draggedSite.id);
-          const overIndex = (group.sites || []).findIndex(s => s.id === targetSiteId);
+        // 如果拖拽到其他分组
+        if (!isNaN(targetGroupId) && targetGroupId !== currentSortingGroupId) {
+          // 查找被拖拽的站点
+          const sourceGroup = groups.find(g => g.id === currentSortingGroupId);
+          const draggedSite = sourceGroup?.sites?.find(s => s.id?.toString() === activeId);
           
-          if (siteIndex !== -1 && overIndex !== -1) {
-            setGroups(prevGroups => {
-              const newGroups = [...prevGroups];
-              const currentSites = newGroups[groupIndex].sites || [];
-              const newSites = arrayMove(currentSites, siteIndex, overIndex);
-              
-              newGroups[groupIndex] = {
-                ...newGroups[groupIndex],
-                sites: newSites
-              };
-              
-              return newGroups;
-            });
-          }
-        }
-      } else if (targetSite && draggedSite.group_id !== targetSite.group_id) {
-        // 跨组拖拽到具体站点位置
-        const sourceGroupId = draggedSite.group_id;
-        const targetGroupId = targetSite.group_id;
-        
-        setGroups(prevGroups => {
-          const newGroups = [...prevGroups];
-          
-          // 从原分组移除站点
-          const sourceGroupIndex = newGroups.findIndex(g => g.id === sourceGroupId);
-          if (sourceGroupIndex !== -1) {
-            newGroups[sourceGroupIndex] = {
-              ...newGroups[sourceGroupIndex],
-              sites: (newGroups[sourceGroupIndex].sites || []).filter(s => s.id !== draggedSite.id)
-            };
-          }
-          
-          // 添加到目标分组的指定位置
-          const targetGroupIndex = newGroups.findIndex(g => g.id === targetGroupId);
-          if (targetGroupIndex !== -1) {
-            const targetSiteIndex = (newGroups[targetGroupIndex].sites || []).findIndex(s => s.id === targetSiteId);
-            const updatedSite = {
-              ...draggedSite,
-              group_id: targetGroupId
-            };
-            
-            // 移除group_id和group_name属性
-            const { group_id, group_name, ...siteWithoutExtraProps } = updatedSite;
-            
-            if (targetSiteIndex !== -1) {
-              const newSites = [...(newGroups[targetGroupIndex].sites || [])];
-              newSites.splice(targetSiteIndex, 0, siteWithoutExtraProps);
-              
-              newGroups[targetGroupIndex] = {
-                ...newGroups[targetGroupIndex],
-                sites: newSites
-              };
-            } else {
-              newGroups[targetGroupIndex] = {
-                ...newGroups[targetGroupIndex],
-                sites: [...(newGroups[targetGroupIndex].sites || []), siteWithoutExtraProps]
-              };
+          if (draggedSite && sourceGroup) {
+            // 确认是否要移动站点
+            if (window.confirm(`确定要将站点 "${draggedSite.name}" 移动到分组 "${groups.find(g => g.id === targetGroupId)?.name}" 吗？`)) {
+              // 移动站点到新分组
+              handleTransferSite(draggedSite.id!, targetGroupId);
             }
           }
-          
-          return newGroups;
-        });
+        }
       }
+      
+      setDragOverGroupId(null);
     }
+  };
 
-    setActiveDragSite(null);
-    setDragOverGroupId(null);
+  // 处理站点转移到其他分组
+  const handleTransferSite = async (siteId: number, targetGroupId: number) => {
+    try {
+      // 找到站点
+      const allSites = groups.flatMap(g => g.sites || []);
+      const site = allSites.find(s => s.id === siteId);
+      
+      if (!site) {
+        handleError('找不到要移动的站点');
+        return;
+      }
+      
+      // 更新站点的分组ID
+      const updatedSite = {
+        ...site,
+        group_id: targetGroupId,
+        order_num: 0, // 重置顺序，放到新分组的最前面
+      };
+      
+      // 调用API更新站点
+      await api.updateSite(siteId, updatedSite);
+      
+      // 重新加载数据
+      await fetchData();
+      
+      setSnackbarMessage(`站点已移动到新分组`);
+      setSnackbarOpen(true);
+      
+    } catch (error) {
+      console.error('移动站点失败:', error);
+      handleError('移动站点失败: ' + (error as Error).message);
+    }
   };
 
   // 处理拖拽悬停事件
@@ -741,7 +638,7 @@ function App() {
     const { over } = event;
     if (over && over.id.toString().startsWith('group-')) {
       const groupId = parseInt(over.id.toString().replace('group-', ''));
-      if (!isNaN(groupId) && groupId !== dragOverGroupId) {
+      if (!isNaN(groupId) && groupId !== currentSortingGroupId && groupId !== dragOverGroupId) {
         setDragOverGroupId(groupId);
       }
     } else {
@@ -787,7 +684,7 @@ function App() {
   const handleOpenAddSite = (groupId: number) => {
     const group = groups.find((g) => g.id === groupId);
     const maxOrderNum = group?.sites?.length
-      ? Math.max(...(group.sites.map((s) => s.order_num))) + 1
+      ? Math.max(...group.sites.map((s) => s.order_num)) + 1
       : 0;
 
     setNewSite({
@@ -1241,21 +1138,6 @@ function App() {
             >
               {sortMode !== SortMode.None ? (
                 <>
-                  {sortMode === SortMode.SiteSort && (
-                    <Button
-                      variant='contained'
-                      color='primary'
-                      startIcon={<SaveIcon />}
-                      onClick={cancelSort}
-                      size='small'
-                      sx={{
-                        minWidth: 'auto',
-                        fontSize: { xs: '0.75rem', sm: '0.875rem' },
-                      }}
-                    >
-                      完成排序
-                    </Button>
-                  )}
                   {sortMode === SortMode.GroupSort && (
                     <Button
                       variant='contained'
@@ -1448,38 +1330,9 @@ function App() {
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
-              onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               onDragOver={handleDragOver}
             >
-              {/* 拖拽覆盖层 */}
-              {activeDragSite && (
-                <DragOverlay>
-                  <Box
-                    sx={{
-                      p: 2,
-                      bgcolor: 'background.paper',
-                      borderRadius: 1,
-                      boxShadow: 3,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      maxWidth: 200,
-                    }}
-                  >
-                    <Box
-                      component="img"
-                      src={activeDragSite.icon || `https://www.google.com/s2/favicons?domain=${activeDragSite.url}&sz=32`}
-                      alt={activeDragSite.name}
-                      sx={{ width: 24, height: 24, borderRadius: '50%' }}
-                    />
-                    <Typography variant="body2" noWrap>
-                      {activeDragSite.name}
-                    </Typography>
-                  </Box>
-                </DragOverlay>
-              )}
-              
               <Box
                 sx={{
                   '& > *': { mb: 5 },
@@ -1488,7 +1341,7 @@ function App() {
               >
                 {sortMode === SortMode.GroupSort ? (
                   <SortableContext
-                    items={groups.map((group) => group.id?.toString() || '')}
+                    items={groups.map((group) => group.id.toString())}
                     strategy={verticalListSortingStrategy}
                   >
                     <Stack
@@ -1500,7 +1353,7 @@ function App() {
                       }}
                     >
                       {groups.map((group) => (
-                        <SortableGroupItem key={group.id} id={group.id?.toString() || ''} group={group} />
+                        <SortableGroupItem key={group.id} id={group.id.toString()} group={group} />
                       ))}
                     </Stack>
                   </SortableContext>
@@ -1530,6 +1383,7 @@ function App() {
                           onUpdateGroup={handleGroupUpdate}
                           onDeleteGroup={handleGroupDelete}
                           configs={configs}
+                          dragOverGroupId={dragOverGroupId}
                         />
                       </Box>
                     ))}
