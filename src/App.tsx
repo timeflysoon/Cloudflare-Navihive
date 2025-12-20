@@ -595,11 +595,6 @@ function App() {
       if (!isNaN(targetGroupId)) {
         setDragOverGroupId(targetGroupId);
         setIsOverGroupHeader(true);
-        
-        // 如果悬停在其他分组的标题上，并且该分组不是当前排序的分组
-        if (targetGroupId !== currentSortingGroupId) {
-          // 这里可以添加一些视觉反馈，比如改变标题的背景色
-        }
       }
     } else if (overId.startsWith('group-')) {
       // 悬停在分组容器上（不是标题）
@@ -663,9 +658,6 @@ function App() {
             await handleTransferSite(draggedSite.site.id!, targetGroupId);
           }
         }
-      } else if (overId.startsWith('site-')) {
-        // 同组内站点排序 - 由GroupCard组件处理
-        // 这里我们不需要做任何处理，因为GroupCard组件会处理同组内的排序
       }
     }
     
@@ -1455,12 +1447,6 @@ function App() {
                       <Box 
                         key={`group-${group.id}`} 
                         id={`group-${group.id}`}
-                        sx={{
-                          border: dragOverGroupId === group.id && isOverGroupHeader ? '2px solid #1976d2' : 'none',
-                          borderRadius: 1,
-                          transition: 'border 0.2s',
-                          backgroundColor: dragOverGroupId === group.id && isOverGroupHeader ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
-                        }}
                       >
                         <GroupCard
                           group={group}
@@ -1475,8 +1461,6 @@ function App() {
                           onUpdateGroup={handleGroupUpdate}
                           onDeleteGroup={handleGroupDelete}
                           configs={configs}
-                          isDragOver={dragOverGroupId === group.id}
-                          isOverHeader={isOverGroupHeader}
                         />
                       </Box>
                     ))}
