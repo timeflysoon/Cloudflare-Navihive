@@ -19,7 +19,6 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  useDroppable,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -100,38 +99,6 @@ const DEFAULT_CONFIGS = {
   'site.searchBoxGuestEnabled': 'true', // 访客是否可以使用搜索框
 };
 
-// 可折叠分组容器组件（用于包裹每个分组，使其可接收拖拽）
-const DroppableGroupContainer = ({ 
-  groupId, 
-  children, 
-  isOver 
-}: { 
-  groupId: number; 
-  children: React.ReactNode; 
-  isOver: boolean; 
-}) => {
-  const { setNodeRef } = useDroppable({
-    id: `group-drop-${groupId}`,
-    data: { type: 'group', groupId },
-  });
-
-  return (
-    <Box
-      ref={setNodeRef}
-      sx={{
-        position: 'relative',
-        border: isOver ? '2px dashed' : 'none',
-        borderColor: 'primary.main',
-        borderRadius: 1,
-        backgroundColor: isOver ? 'action.hover' : 'transparent',
-        transition: 'all 0.2s ease',
-      }}
-    >
-      {children}
-    </Box>
-  );
-};
-
 function App() {
   // 主题模式状态
   const [darkMode, setDarkMode] = useState(() => {
@@ -164,10 +131,6 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>(SortMode.None);
   const [currentSortingGroupId, setCurrentSortingGroupId] = useState<number | null>(null);
-  
-  // 移除未使用的 activeDragGroupId 状态
-  // 新增：拖拽状态
-  const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null);
 
   // 新增认证状态
   const [isAuthChecking, setIsAuthChecking] = useState(true);
@@ -568,137 +531,22 @@ function App() {
   const cancelSort = () => {
     setSortMode(SortMode.None);
     setCurrentSortingGroupId(null);
-    setDragOverGroupId(null);
   };
 
-  // 处理拖拽结束事件 - 修改后支持跨组拖拽
-  const handleDragEnd = async (event: DragEndEvent) => {
+  // 处理拖拽结束事件
+  const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    
-    // 重置拖拽状态
-    setDragOverGroupId(null);
 
-    if (!over) {
-      return;
-    }
+    if (!over) return;
 
-    // 获取拖拽的站点信息
-    const draggedSiteId = parseInt(active.id.toString().replace('site-', ''));
-    const sourceGroupId = currentSortingGroupId;
-    
-    // 查找被拖拽的站点
-    const sourceGroup = groups.find(g => g.id === sourceGroupId);
-    if (!sourceGroup) return;
-    
-    const draggedSite = sourceGroup.sites.find(s => s.id === draggedSiteId);
-    // 添加更严格的检查
-    if (!draggedSite || draggedSite.id === undefined) {
-      console.error('未找到拖拽的站点或站点ID无效');
-      return;
-    }
+    if (active.id !== over.id) {
+      const oldIndex = groups.findIndex((group) => group.id.toString() === active.id);
+      const newIndex = groups.findIndex((group) => group.id.toString() === over.id);
 
-    const draggedSiteIdNum = draggedSite.id; // 获取实际的站点ID数字
-
-    // 检查释放目标：是组内其他位置还是其他分组
-    if (over.id.toString().startsWith('group-drop-')) {
-      // 跨组拖拽：释放到其他分组
-      const targetGroupId = parseInt(over.id.toString().replace('group-drop-', ''));
-      
-      if (sourceGroupId !== targetGroupId) {
-        console.log(`将站点从分组 ${sourceGroupId} 移动到分组 ${targetGroupId}`);
-        
-        // 1. 立即更新前端状态（乐观更新）
-        setGroups(prevGroups => {
-          return prevGroups.map(group => {
-            // 从源分组中移除该站点
-            if (group.id === sourceGroupId) {
-              return {
-                ...group,
-                // 修复：确保 site.id 不是 undefined
-                sites: group.sites.filter(s => s.id !== undefined && s.id !== draggedSiteIdNum)
-              };
-            }
-            // 添加到目标分组（放在末尾）
-            if (group.id === targetGroupId) {
-              const updatedSite = {
-                ...draggedSite,
-                group_id: targetGroupId,
-                order_num: group.sites.length // 放在目标分组末尾
-              };
-              return {
-                ...group,
-                sites: [...group.sites, updatedSite]
-              };
-            }
-            return group;
-          });
-        });
-
-        // 2. 调用API更新后端
-        try {
-          await api.updateSite(draggedSiteIdNum, {
-            ...draggedSite,
-            group_id: targetGroupId,
-            order_num: groups.find(g => g.id === targetGroupId)?.sites.length || 0
-          });
-          
-          // 显示成功提示
-          setSnackbarMessage(`已将 "${draggedSite.name}" 移动到新分组`);
-          setSnackbarOpen(true);
-          
-          // 注意：这里不重新fetchData，因为我们已经乐观更新了
-          // 保持当前分组在排序模式，其他分组折叠
-        } catch (error) {
-          console.error('移动站点失败:', error);
-          handleError('移动站点失败，已自动恢复');
-          // 出错时重新获取数据以恢复状态
-          await fetchData();
-        }
-      }
-    } else if (over.id.toString().startsWith('site-')) {
-      // 组内排序：释放到同组其他站点位置
-      const oldIndex = sourceGroup.sites.findIndex((site) => site.id !== undefined && site.id.toString() === active.id);
-      const newIndex = sourceGroup.sites.findIndex((site) => site.id !== undefined && site.id.toString() === over.id);
-
-      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-        // 更新前端状态
-        setGroups(prevGroups => {
-          return prevGroups.map(group => {
-            if (group.id === sourceGroupId) {
-              return {
-                ...group,
-                sites: arrayMove(group.sites, oldIndex, newIndex)
-              };
-            }
-            return group;
-          });
-        });
-
-        // 注意：这里不立即保存，等待用户点击"保存顺序"按钮
+      if (oldIndex !== -1 && newIndex !== -1) {
+        setGroups(arrayMove(groups, oldIndex, newIndex));
       }
     }
-  };
-
-  // 处理拖拽开始
-  const handleDragStart = () => {
-    // 可以在这里添加一些拖拽开始时的逻辑
-  };
-
-  // 处理拖拽经过
-  const handleDragOver = (event: any) => {
-    if (event.over?.id?.toString().startsWith('group-drop-')) {
-      const overGroupId = parseInt(event.over.id.toString().replace('group-drop-', ''));
-      if (overGroupId !== currentSortingGroupId) {
-        setDragOverGroupId(overGroupId);
-      }
-    } else {
-      setDragOverGroupId(null);
-    }
-  };
-
-  // 处理拖拽取消
-  const handleDragCancel = () => {
-    setDragOverGroupId(null);
   };
 
   // 新增分组相关函数
@@ -1208,26 +1056,6 @@ function App() {
                       保存分组顺序
                     </Button>
                   )}
-                  {sortMode === SortMode.SiteSort && (
-                    <Button
-                      variant='contained'
-                      color='primary'
-                      startIcon={<SaveIcon />}
-                      onClick={() => {
-                        const currentGroup = groups.find(g => g.id === currentSortingGroupId);
-                        if (currentGroup) {
-                          handleSaveSiteOrder(currentSortingGroupId!, currentGroup.sites);
-                        }
-                      }}
-                      size='small'
-                      sx={{
-                        minWidth: 'auto',
-                        fontSize: { xs: '0.75rem', sm: '0.875rem' },
-                      }}
-                    >
-                      保存站点顺序
-                    </Button>
-                  )}
                   <Button
                     variant='outlined'
                     color='inherit'
@@ -1402,17 +1230,18 @@ function App() {
           )}
 
           {!loading && !error && (
-            <Box sx={{ '& > *': { mb: 5 }, minHeight: '100px' }}>
-              {/* 使用 DndContext 包裹整个可拖拽区域 */}
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                onDragOver={handleDragOver}
-                onDragCancel={handleDragCancel}
-              >
-                {sortMode === SortMode.GroupSort ? (
+            <Box
+              sx={{
+                '& > *': { mb: 5 },
+                minHeight: '100px',
+              }}
+            >
+              {sortMode === SortMode.GroupSort ? (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
                   <SortableContext
                     items={groups.map((group) => group.id.toString())}
                     strategy={verticalListSortingStrategy}
@@ -1430,35 +1259,29 @@ function App() {
                       ))}
                     </Stack>
                   </SortableContext>
-                ) : (
-                  <Stack spacing={5}>
-                    {groups.map((group) => (
-                      <DroppableGroupContainer 
-                        key={`group-${group.id}`} 
-                        groupId={group.id}
-                        isOver={dragOverGroupId === group.id}
-                      >
-                        <Box id={`group-${group.id}`}>
-                          <GroupCard
-                            group={group}
-                            sortMode={sortMode === SortMode.None ? 'None' : 'SiteSort'}
-                            currentSortingGroupId={currentSortingGroupId}
-                            viewMode={viewMode}
-                            onUpdate={handleSiteUpdate}
-                            onDelete={handleSiteDelete}
-                            onSaveSiteOrder={handleSaveSiteOrder}
-                            onStartSiteSort={startSiteSort}
-                            onAddSite={handleOpenAddSite}
-                            onUpdateGroup={handleGroupUpdate}
-                            onDeleteGroup={handleGroupDelete}
-                            configs={configs}
-                          />
-                        </Box>
-                      </DroppableGroupContainer>
-                    ))}
-                  </Stack>
-                )}
-              </DndContext>
+                </DndContext>
+              ) : (
+                <Stack spacing={5}>
+                  {groups.map((group) => (
+                    <Box key={`group-${group.id}`} id={`group-${group.id}`}>
+                      <GroupCard
+                        group={group}
+                        sortMode={sortMode === SortMode.None ? 'None' : 'SiteSort'}
+                        currentSortingGroupId={currentSortingGroupId}
+                        viewMode={viewMode}
+                        onUpdate={handleSiteUpdate}
+                        onDelete={handleSiteDelete}
+                        onSaveSiteOrder={handleSaveSiteOrder}
+                        onStartSiteSort={startSiteSort}
+                        onAddSite={handleOpenAddSite}
+                        onUpdateGroup={handleGroupUpdate}
+                        onDeleteGroup={handleGroupDelete}
+                        configs={configs}
+                      />
+                    </Box>
+                  ))}
+                </Stack>
+              )}
             </Box>
           )}
 
