@@ -610,7 +610,7 @@ function App() {
     }
   };
 
-  // 处理拖拽结束事件 - 修复跨组拖拽
+  // 处理拖拽结束事件
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
@@ -964,12 +964,15 @@ function App() {
           Object.keys(groupedSites).forEach(groupId => {
             const groupIdNum = parseInt(groupId);
             const sitesInGroup = groupedSites[groupIdNum];
-            sitesInGroup.forEach((site, index) => {
-              finalSites.push({
-                ...site,
-                order_num: index
+            // 修复：检查sitesInGroup是否存在
+            if (sitesInGroup) {
+              sitesInGroup.forEach((site, index) => {
+                finalSites.push({
+                  ...site,
+                  order_num: index
+                });
               });
-            });
+            }
           });
 
           // 使用处理后的数据
@@ -1494,7 +1497,7 @@ function App() {
                           borderRadius: 1,
                           transition: 'all 0.3s ease',
                           backgroundColor: dragOverGroupId === group.id && isOverGroupHeader 
-                            ? (theme.palette.mode === 'dark' ? 'rgba(25, 118, 210, 0.2)' : 'rgba(25, 118, 210, 0.08)')
+                            ? (darkMode ? 'rgba(25, 118, 210, 0.2)' : 'rgba(25, 118, 210, 0.08)')
                             : 'transparent',
                           boxShadow: dragOverGroupId === group.id && isOverGroupHeader 
                             ? '0 0 15px rgba(25, 118, 210, 0.3)' 
@@ -1502,8 +1505,6 @@ function App() {
                           transform: dragOverGroupId === group.id && isOverGroupHeader 
                             ? 'scale(1.01)' 
                             : 'scale(1)',
-                          // 确保变量被使用，避免TypeScript错误
-                          ...(dragOverGroupId || isOverGroupHeader ? {} : {})
                         }}
                       >
                         <GroupCard
@@ -1519,9 +1520,7 @@ function App() {
                           onUpdateGroup={handleGroupUpdate}
                           onDeleteGroup={handleGroupDelete}
                           configs={configs}
-                          // 传递拖拽状态到GroupCard组件
-                          isDragOver={dragOverGroupId === group.id}
-                          isOverHeader={isOverGroupHeader}
+                          // 不再传递 isDragOver 和 isOverHeader 属性
                         />
                       </Box>
                     ))}
